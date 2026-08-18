@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>门店云库存</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f4f6;color:#111827;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+header{background:#111827;color:#fff;padding:18px 16px 14px;position:sticky;top:0;z-index:10}h1{font-size:21px;margin:0 0 3px}.sub{font-size:12px;opacity:.7}
+main{max-width:760px;margin:auto;padding:12px 12px 40px}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}.card,.panel{background:#fff;border-radius:14px;box-shadow:0 1px 5px #00000010}.card{padding:12px}.num{font-size:23px;font-weight:800}.lab{font-size:12px;color:#6b7280}
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin:10px 0}.tab{border:0;border-radius:11px;padding:11px 4px;background:#e5e7eb;font-weight:700}.tab.active{background:#111827;color:#fff}
+.panel{padding:14px;margin-bottom:10px}.hidden{display:none!important}
+input,select{width:100%;font-size:16px;padding:11px;border:1px solid #d1d5db;border-radius:10px;margin:4px 0 9px;background:#fff}button{border:0;border-radius:10px;padding:11px 13px;font-weight:700;font-size:14px}.primary{background:#111827;color:#fff}.green{background:#dcfce7;color:#166534}.red{background:#fee2e2;color:#991b1b}.gray{background:#e5e7eb}.orange{background:#ffedd5;color:#9a3412}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}.item{display:flex;justify-content:space-between;gap:10px;padding:12px 0;border-bottom:1px solid #eee}.item:last-child{border-bottom:0}.muted{font-size:12px;color:#6b7280}.badge{font-size:11px;padding:4px 7px;border-radius:99px;background:#dcfce7;color:#166534}.low{background:#fee2e2;color:#991b1b}.notice{background:#eff6ff;color:#1d4ed8;border-radius:10px;padding:10px;font-size:13px;margin-bottom:10px}.danger{color:#b91c1c}
+#reader{width:100%;min-height:180px;background:#111827;border-radius:12px;overflow:hidden;margin:8px 0}#reader video{width:100%!important}
+.login{max-width:420px;margin:12vh auto;padding:16px}.login h2{margin-top:0}.status{font-size:12px;margin:7px 0}.ok{color:#15803d}.err{color:#b91c1c}
+table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:7px;border-bottom:1px solid #eee;text-align:left}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://unpkg.com/html5-qrcode" defer></script>
+</head>
+<body>
+<div id="loginView" class="login panel">
+<h2>📦 门店云库存</h2>
+<p class="muted">员工和老板使用同一个云端库存。</p>
+<label>邮箱</label><input id="email" type="email" placeholder="你的登录邮箱">
+<label>密码</label><input id="password" type="password" placeholder="密码">
+<div class="row"><button class="primary" onclick="login()">登录</button><button class="gray" onclick="signup()">注册账号</button></div>
+<div id="loginMsg" class="status"></div>
+</div>
+
+<div id="appView" class="hidden">
+<header><h1>📦 门店云库存</h1><div class="sub" id="userLabel"></div></header>
+<main>
+<div class="cards">
+<div class="card"><div class="lab">商品种类</div><div class="num" id="skuCount">0</div></div>
+<div class="card"><div class="lab">库存种类</div><div class="num" id="activeCount">0</div></div>
+<div class="card"><div class="lab">今日流水</div><div class="num" id="todayCount">0</div></div>
+</div>
+<div class="tabs">
+<button class="tab active" data-tab="stock">📊库存</button>
+<button class="tab" data-tab="scan">📷扫码</button>
+<button class="tab" data-tab="flow">🧾流水</button>
+<button class="tab" data-tab="manage">⚙️管理</button>
+</div>
+
+<section id="stock" class="panel">
+<div class="row"><input id="stockSearch" placeholder="搜索商品/条码"><button class="gray" onclick="loadAll()">🔄刷新</button></div>
+<div id="stockList"></div>
+</section>
+
+<section id="scan" class="panel hidden">
+<div class="notice">手机打开本网页后，点“开始扫码”。第一次使用需要允许摄像头权限。若扫码失败，也可以直接输入条码。</div>
+<div class="row"><button class="primary" onclick="startScanner()">📷开始扫码</button><button class="gray" onclick="stopScanner()">停止</button></div>
+<div id="reader" class="hidden"></div>
+<label>条码</label><input id="barcode" placeholder="扫描或输入条码">
+<div id="scanInfo" class="muted"></div>
+<div class="row"><button class="green" onclick="moveStock('in')">📦入库</button><button class="red" onclick="moveStock('out')">📤出库</button></div>
+</section>
+
+<section id="flow" class="panel hidden">
+<div class="row"><select id="flowType"><option value="">全部流水</option><option value="in">入库</option><option value="out">出库</option></select><button class="gray" onclick="exportCSV()">导出CSV</button></div>
+<div id="flowList"></div>
+</section>
+
+<section id="manage" class="panel hidden">
+<h3 style="margin-top:0">商品管理</h3>
+<div class="row3"><input id="pBarcode" placeholder="条码"><input id="pName" placeholder="商品名称"><input id="pUnit" placeholder="单位"></div>
+<div class="row"><input id="pMin" type="number" step="0.01" placeholder="最低库存"><button class="primary" onclick="saveProduct()">保存商品</button></div>
+<div id="productList"></div>
+<hr>
+<h3>账号</h3><button class="gray" onclick="logout()">退出登录</button>
+</section>
+</main>
+</div>
+
+<script>
+const CONFIG={url:"https://blojwegvzgvfqlvvtjvn.supabase.co/rest/v1/",key:"sb_publishable_GvHMnMyllYaunaXVfXpWSw_cRi767bI"};
+let sb=null,products=[],flows=[],scanner=null;
+
+function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+function showTab(id){document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===id));document.querySelectorAll('main section').forEach(x=>x.classList.toggle('hidden',x.id!==id));if(id==='flow')renderFlows();if(id==='manage')renderProducts();}
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+document.getElementById('stockSearch').oninput=renderStock;
+document.getElementById('flowType').onchange=renderFlows;
+
+async function init(){
+ if(CONFIG.url.startsWith('YOUR_')){document.getElementById('loginMsg').innerHTML='<span class="err">请先在 index.html 顶部填写 Supabase URL 和 Publishable Key。</span>';return}
+ sb=supabase.createClient(CONFIG.url,CONFIG.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+ const {data:{session}}=await sb.auth.getSession();
+ if(session) enterApp(session);
+ sb.auth.onAuthStateChange((_e,s)=>{if(s)enterApp(s);else{document.getElementById('appView').classList.add('hidden');document.getElementById('loginView').classList.remove('hidden')}});
+}
+async function login(){let email=document.getElementById('email').value.trim(),password=document.getElementById('password').value;let {error}=await sb.auth.signInWithPassword({email,password});msg(error?error.message:'登录成功','ok')}
+async function signup(){let email=document.getElementById('email').value.trim(),password=document.getElementById('password').value;if(password.length<6)return msg('密码至少6位','err');let {error}=await sb.auth.signUp({email,password});msg(error?error.message:'注册成功，请按邮箱提示完成验证。','ok')}
+function msg(t,c=''){document.getElementById('loginMsg').innerHTML='<span class="'+c+'">'+esc(t)+'</span>'}
+async function logout(){await sb.auth.signOut()}
+async function enterApp(session){document.getElementById('loginView').classList.add('hidden');document.getElementById('appView').classList.remove('hidden');document.getElementById('userLabel').textContent=session.user.email||'';await loadAll();subscribeRealtime()}
+async function loadAll(){if(!sb)return;let p=await sb.from('products').select('*').order('name');if(p.error)return alert(p.error.message);products=p.data||[];let f=await sb.from('stock_flows').select('*').order('created_at',{ascending:false}).limit(1000);if(f.error)return alert(f.error.message);flows=f.data||[];renderAll()}
+function qty(b){return flows.filter(f=>f.barcode===b).reduce((s,f)=>s+(f.move_type==='in'?Number(f.qty):-Number(f.qty)),0)}
+function renderAll(){renderStock();renderFlows();renderProducts();document.getElementById('skuCount').textContent=products.length;document.getElementById('activeCount').textContent=products.filter(p=>qty(p.barcode)>0).length;let d=new Date();let ds=d.toISOString().slice(0,10);document.getElementById('todayCount').textContent=flows.filter(f=>f.created_at.slice(0,10)===ds).length}
+function renderStock(){let q=(document.getElementById('stockSearch')?.value||'').toLowerCase();let ps=products.filter(p=>(p.name+p.barcode).toLowerCase().includes(q));document.getElementById('stockList').innerHTML=ps.map(p=>{let n=qty(p.barcode),low=Number(p.min_stock)>0&&n<=Number(p.min_stock);return `<div class="item"><div><b>${esc(p.name)}</b><div class="muted">${esc(p.barcode)} · ${esc(p.unit)}</div></div><div style="text-align:right"><b>${n.toFixed(2).replace(/\.00$/,'')}</b> ${esc(p.unit)}<br><span class="badge ${low?'low':''}">${low?'库存偏低':'正常'}</span></div></div>`}).join('')||'<p class="muted">暂无商品。</p>'}
+function renderFlows(){let type=document.getElementById('flowType')?.value||'';let fs=flows.filter(f=>!type||f.move_type===type);document.getElementById('flowList').innerHTML=fs.slice(0,100).map(f=>`<div class="item"><div><b>${f.move_type==='in'?'📦入库':'📤出库'} · ${esc(f.product_name)}</b><div class="muted">${esc(f.barcode)} · ${new Date(f.created_at).toLocaleString()}</div></div><div><b>${f.move_type==='in'?'+':'-'}${f.qty} ${esc(f.unit)}</b></div></div>`).join('')||'<p class="muted">暂无流水。</p>'}
+function renderProducts(){document.getElementById('productList').innerHTML=products.map(p=>`<div class="item"><div><b>${esc(p.name)}</b><div class="muted">${esc(p.barcode)} · ${esc(p.unit)} · 最低库存 ${p.min_stock||0}</div></div><button class="gray" onclick="editProduct('${esc(p.barcode)}')">编辑</button></div>`).join('')}
+
+async function saveProduct(){let barcode=pBarcode.value.trim(),name=pName.value.trim(),unit=pUnit.value.trim()||'个',min=Number(pMin.value)||0;if(!barcode||!name)return alert('请填写条码和名称');let {error}=await sb.from('products').upsert({barcode,name,unit,min_stock:min},{onConflict:'barcode'});if(error)alert(error.message);else{clearProduct();await loadAll();alert('已保存')}}
+function editProduct(b){let p=products.find(x=>x.barcode===b);if(!p)return;pBarcode.value=p.barcode;pName.value=p.name;pUnit.value=p.unit;pMin.value=p.min_stock||0;showTab('manage')}
+function clearProduct(){pBarcode.value=pName.value=pUnit.value=pMin.value=''}
+
+async function moveStock(type){let b=document.getElementById('barcode').value.trim();if(!b)return alert('请先扫码');let p=products.find(x=>x.barcode===b);if(!p){let name=prompt('该条码不存在，请输入商品名称');if(!name)return;let unit=prompt('单位，如 kg / 个 / 包','kg')||'kg';let {data,error}=await sb.from('products').insert({barcode:b,name,unit,min_stock:0}).select().single();if(error)return alert(error.message);p=data;products.push(p)}
+let q=prompt(`${type==='in'?'入库':'出库'}：${p.name}\n请输入数量（${p.unit}）`,'1');if(q===null)return;q=Number(q);if(!(q>0))return alert('数量必须大于0');
+if(type==='out'&&qty(b)<q-1e-9)return alert(`库存不足，当前 ${qty(b)} ${p.unit}`);
+let {error}=await sb.rpc('record_stock_move',{p_barcode:b,p_move_type:type,p_qty:q});if(error)return alert(error.message);
+document.getElementById('barcode').value='';document.getElementById('scanInfo').textContent=`已完成：${type==='in'?'入库':'出库'} ${q}${p.unit} ${p.name}`;await loadAll()}
+
+function startScanner(){if(typeof Html5Qrcode==='undefined')return alert('扫码组件还在加载，请稍等1秒再点。');if(scanner)return;scanner=new Html5Qrcode('reader');document.getElementById('reader').classList.remove('hidden');scanner.start({facingMode:'environment'},{fps:10,qrbox:{width:250,height:160}},text=>{document.getElementById('barcode').value=text;stopScanner()},()=>{}).catch(e=>{scanner=null;alert('摄像头无法启动：'+e)})}
+function stopScanner(){if(scanner){scanner.stop().catch(()=>{});scanner.clear().catch(()=>{});scanner=null}document.getElementById('reader').classList.add('hidden')}
+function subscribeRealtime(){sb.channel('stock-live').on('postgres_changes',{event:'*',schema:'public',table:'products'},()=>loadAll()).on('postgres_changes',{event:'*',schema:'public',table:'stock_flows'},()=>loadAll()).subscribe()}
+function exportCSV(){let csv='\ufeff时间,操作,商品,条码,数量,单位\n'+flows.map(f=>[new Date(f.created_at).toLocaleString(),f.move_type==='in'?'入库':'出库',f.product_name,f.barcode,f.qty,f.unit].map(x=>`"${String(x).replace(/"/g,'""')}"`).join(',')).join('\n');let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='云库存流水.csv';a.click()}
+init();
+</script>
+</body>
+</html>
