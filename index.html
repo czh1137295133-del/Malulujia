@@ -116,50 +116,53 @@ if(type==='out'&&qty(b)<q-1e-9)return alert(`库存不足，当前 ${qty(b)} ${p
 let {error}=await sb.rpc('record_stock_move',{p_barcode:b,p_move_type:type,p_qty:q});if(error)return alert(error.message);
 document.getElementById('barcode').value='';document.getElementById('scanInfo').textContent=`已完成：${type==='in'?'入库':'出库'} ${q}${p.unit} ${p.name}`;await loadAll()}
 
+let isStopping = false;
+
 function startScanner() {
-  if(typeof Html5Qrcode === 'undefined') return alert('扫码组件还在加载，请稍等1秒再点。');
-  // 如果当前已经有正在运行的扫码器，直接返回，防止重复点击开启多个
-  if(scanner) return;
+  if (typeof Html5Qrcode === 'undefined') return alert('扫码组件还在加载，请稍等。');
+  if (scanner || isStopping) return; 
+  
+  document.getElementById('reader').innerHTML = '';
   
   scanner = new Html5Qrcode('reader');
   document.getElementById('reader').classList.remove('hidden');
   
-  const config = {
-    fps: 15, 
-    qrbox: { width: 300, height: 120 }, // 扁平宽框，适合条形码
-    aspectRatio: 1.0 
-  };
-
+  // 【修复核心】：这里只传一个键 { facingMode: 'environment' }，完美符合库的要求
   scanner.start(
-    { facingMode: 'environment', video: { width: { min: 1280 } } },
-    config,
+    { facingMode: 'environment' }, 
+    { fps: 15, qrbox: { width: 300, height: 120 } },
     text => {
-      // 成功扫出时的处理
       document.getElementById('barcode').value = text;
-      // 调用新版的安全关闭函数
-      stopScanner(); 
+      setTimeout(() => stopScanner(), 200); 
     },
     errorMessage => {
-      // 扫描过程中的未对准报错，必须留空
+      // 扫描中未对准的报错，保持留空
     }
   ).catch(e => {
     scanner = null;
     alert('摄像头启动失败：' + e);
   });
 }
-// 注意函数前面加了 async
+
 async function stopScanner() {
-  if (scanner) {
-    try {
-      // 核心修复点：等待摄像头关闭
-      await scanner.stop(); 
-      scanner.clear();      
-    } catch (e) {
-      console.warn("停止时发生意外，已忽略:", e);
-    }
-    scanner = null; 
+  if (!scanner || isStopping) {
+    document.getElementById('reader').classList.add('hidden');
+    return;
   }
-  document.getElementById('reader').classList.add('hidden');
+  
+  isStopping = true;
+  
+  try {
+    await scanner.stop(); 
+    scanner.clear();      
+  } catch (e) {
+    console.warn("停止时发生意外，已忽略:", e);
+  } finally {
+    scanner = null; 
+    isStopping = false; 
+    document.getElementById('reader').innerHTML = ''; 
+    document.getElementById('reader').classList.add('hidden');
+  }
 }
 function subscribeRealtime(){sb.channel('stock-live').on('postgres_changes',{event:'*',schema:'public',table:'products'},()=>loadAll()).on('postgres_changes',{event:'*',schema:'public',table:'stock_flows'},()=>loadAll()).subscribe()}
 function exportCSV(){let csv='\ufeff时间,操作,商品,条码,数量,单位\n'+flows.map(f=>[new Date(f.created_at).toLocaleString(),f.move_type==='in'?'入库':'出库',f.product_name,f.barcode,f.qty,f.unit].map(x=>`"${String(x).replace(/"/g,'""')}"`).join(',')).join('\n');let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='云库存流水.csv';a.click()}
