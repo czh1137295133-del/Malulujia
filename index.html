@@ -135,23 +135,22 @@ function startScanner() {
   scanner = new Html5Qrcode('reader', { formatsToSupport: formatsToSupport });
   document.getElementById('reader').classList.remove('hidden');
   
-  // 【核心修复：把超清和对焦参数放进配置对象的 videoConstraints 中】
   const config = {
     fps: 15,
     experimentalFeatures: {
       useBarCodeDetectorIfSupported: true
     },
-    // 将底层摄像头参数转移到这里，就能完美绕开组件的报错
     videoConstraints: {
+      // 【核心修复】：在这里再次强制要求使用后置摄像头
+      facingMode: 'environment', 
       width: { ideal: 1920, min: 1280 },
       height: { ideal: 1080, min: 720 },
       advanced: [{ focusMode: "continuous" }]
     }
   };
 
-  // 第一个参数老老实实只传 1 个键（满足组件的死规定）
   scanner.start(
-    { facingMode: 'environment' }, 
+    { facingMode: 'environment' }, // 这里保留以应付组件的参数检查
     config,
     text => {
       document.getElementById('barcode').value = text;
