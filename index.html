@@ -55,7 +55,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:7px;borde
 <section id="scan" class="panel hidden">
 <div class="notice">手机打开本网页后，点“开始扫码”。第一次使用需要允许摄像头权限。若扫码失败，也可以直接输入条码。</div>
 <div class="row"><button class="primary" onclick="startScanner()">📷开始扫码</button><button class="gray" onclick="stopScanner()">停止</button></div>
-  <div class="row"><button class="gray" onclick="switchCamera()">🔄切换摄像头</button></div>
+  
 <div id="reader" class="hidden"></div>
 <label>条码</label><input id="barcode" placeholder="扫描或输入条码">
 <div id="scanInfo" class="muted"></div>
@@ -119,31 +119,19 @@ document.getElementById('barcode').value='';document.getElementById('scanInfo').
 
 let isStopping = false;
 
-let currentCameraMode = 'environment';
-
-async function switchCamera() {
-  if (isStopping) return;
-  if (!scanner) {
-    currentCameraMode = currentCameraMode === 'environment' ? 'user' : 'environment';
-    return startScanner();
-  }
-  try {
-    await stopScanner();
-    currentCameraMode = currentCameraMode === 'environment' ? 'user' : 'environment';
-    startScanner();
-  } catch (e) {
-    console.error('切换摄像头失败:', e);
-  }
-}
-
 function startScanner() {
-  if (typeof Html5Qrcode === 'undefined') return alert('扫码组件还在加载，请稍等。');
+  if (typeof Html5Qrcode === 'undefined') {
+    return alert('扫码组件还在加载，请稍等。');
+  }
+
   if (scanner || isStopping) return;
 
   const reader = document.getElementById('reader');
   reader.innerHTML = '';
   reader.classList.remove('hidden');
 
+  // 本系统以门店常用 Code 128 为第一优先级。
+  // 只保留实际需要的条码制式，减少每一帧的识别负担。
   const formatsToSupport = [
     Html5QrcodeSupportedFormats.CODE_128,
     Html5QrcodeSupportedFormats.EAN_13,
@@ -152,14 +140,25 @@ function startScanner() {
     Html5QrcodeSupportedFormats.UPC_A
   ];
 
-  scanner = new Html5Qrcode('reader', { formatsToSupport });
+  scanner = new Html5Qrcode('reader', {
+    formatsToSupport: formatsToSupport,
+    verbose: false
+  });
 
+  // Code 128 是横向一维条码：
+  // 扫描框做成“宽而矮”，让条码尽可能占满识别区域。
   const config = {
     fps: 20,
-    qrbox: { width: 320, height: 180 },
+    qrbox: function(viewfinderWidth, viewfinderHeight) {
+      const width = Math.min(Math.floor(viewfinderWidth * 0.92), 520);
+      const height = Math.min(Math.floor(viewfinderHeight * 0.34), 190);
+      return { width: width, height: height };
+    },
     aspectRatio: 16 / 9,
     disableFlip: true,
-    experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+    experimentalFeatures: {
+      useBarCodeDetectorIfSupported: true
+    },
     videoConstraints: {
       facingMode: { exact: 'environment' },
       width: { ideal: 1920, min: 1280 },
@@ -167,20 +166,87 @@ function startScanner() {
     }
   };
 
+  let lastDecoded = '';
+  let sameCount = 0;
+  let accepting = false;
+
   scanner.start(
     { facingMode: { exact: 'environment' } },
     config,
-    text => {
-      document.getElementById('barcode').value = text;
-      document.getElementById('scanInfo').textContent = '扫描成功：' + text;
-      setTimeout(() => stopScanner(), 200);
+    function(decodedText) {
+      decodedText = String(decodedText || '').trim();
+      if (!decodedText || accepting) return;
+
+      // 连续两次识别到完全相同的结果才确认，
+      // 可明显降低单帧误识别导致错误入库/出库的概率。
+      if (decodedText === lastDecoded) {
+        sameCount++;
+      } else {
+        lastDecoded = decodedText;
+        sameCount = 1;
+      }
+
+      if (sameCount < 2) return;
+
+      accepting = true;
+
+      document.getElementById('barcode').value = decodedText;
+      document.getElementById('scanInfo').textContent =
+        '✓ 扫描成功：' + decodedText;
+
+      setTimeout(() => stopScanner(), 250);
     },
-    () => {}
-  ).catch(e => {
+    function(errorMessage) {
+      // 识别不到时不弹窗。
+    }
+  ).then(async function() {
+    // 部分 Android 浏览器支持动态调整连续自动对焦/轻微数字变焦。
+    // 支持时尝试开启连续对焦和约 1.5x 变焦；
+    // 不支持则保持原摄像头设置，不影响扫码。
+    try {
+      const video = reader.querySelector('video');
+      if (!video || !video.srcObject) return;
+
+      const tracks = video.srcObject.getVideoTracks();
+      if (!tracks.length) return;
+
+      const track = tracks[0];
+      const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+      const constraints = {};
+
+      if (capabilities.focusMode &&
+          capabilities.focusMode.includes('continuous')) {
+        constraints.focusMode = 'continuous';
+      }
+
+      if (typeof capabilities.zoom === 'object' &&
+          capabilities.zoom.min != null &&
+          capabilities.zoom.max != null) {
+        const targetZoom = Math.min(
+          Math.max(capabilities.zoom.min, 1.5),
+          capabilities.zoom.max
+        );
+        constraints.zoom = targetZoom;
+      }
+
+      if (Object.keys(constraints).length) {
+        await track.applyConstraints(constraints);
+      }
+    } catch (e) {
+      console.log('摄像头高级参数不支持，使用默认设置');
+    }
+  }).catch(function(error) {
+    console.error('后置摄像头启动失败:', error);
     scanner = null;
     reader.classList.add('hidden');
-    console.error(e);
-    alert('后置摄像头启动失败，请确认浏览器已允许摄像头权限。');
+
+    alert(
+      '后置摄像头启动失败。\n\n' +
+      '请检查：\n' +
+      '1. 是否允许浏览器使用摄像头\n' +
+      '2. 是否使用 HTTPS 打开网页\n' +
+      '3. 是否有其他 App 正在占用摄像头'
+    );
   });
 }
 
