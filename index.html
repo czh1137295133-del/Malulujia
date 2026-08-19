@@ -153,7 +153,22 @@ function startScanner(){
     alert('摄像头启动失败或不支持高分辨率：' + e);
   });
 }
-function stopScanner(){if(scanner){scanner.stop().catch(()=>{});scanner.clear().catch(()=>{});scanner=null}document.getElementById('reader').classList.add('hidden')}
+// 注意函数前面加了 async
+async function stopScanner() {
+  if (scanner) {
+    try {
+      // 加上 await，耐心等待手机硬件把摄像头真正关闭
+      await scanner.stop(); 
+      // 确认关闭后再清空界面
+      scanner.clear();      
+    } catch (e) {
+      console.warn("停止摄像头时忽略错误:", e);
+    }
+    // 最后再把变量置空
+    scanner = null; 
+  }
+  document.getElementById('reader').classList.add('hidden');
+}
 function subscribeRealtime(){sb.channel('stock-live').on('postgres_changes',{event:'*',schema:'public',table:'products'},()=>loadAll()).on('postgres_changes',{event:'*',schema:'public',table:'stock_flows'},()=>loadAll()).subscribe()}
 function exportCSV(){let csv='\ufeff时间,操作,商品,条码,数量,单位\n'+flows.map(f=>[new Date(f.created_at).toLocaleString(),f.move_type==='in'?'入库':'出库',f.product_name,f.barcode,f.qty,f.unit].map(x=>`"${String(x).replace(/"/g,'""')}"`).join(',')).join('\n');let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='云库存流水.csv';a.click()}
 init();
