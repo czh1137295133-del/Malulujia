@@ -135,32 +135,30 @@ function startScanner() {
   scanner = new Html5Qrcode('reader', { formatsToSupport: formatsToSupport });
   document.getElementById('reader').classList.remove('hidden');
   
+  // 【核心修复：把超清和对焦参数放进配置对象的 videoConstraints 中】
   const config = {
-    fps: 15, // 保持 15 帧即可，帧率太高手机 CPU 会发烫卡顿
+    fps: 15,
     experimentalFeatures: {
-      useBarCodeDetectorIfSupported: true // 优先调用安卓系统的硬件级扫码
+      useBarCodeDetectorIfSupported: true
+    },
+    // 将底层摄像头参数转移到这里，就能完美绕开组件的报错
+    videoConstraints: {
+      width: { ideal: 1920, min: 1280 },
+      height: { ideal: 1080, min: 720 },
+      advanced: [{ focusMode: "continuous" }]
     }
   };
 
-  // 【核心修改：暴力拉升画质与对焦】
-  const cameraConstraints = {
-    facingMode: 'environment',
-    // 强制要求手机提供 1080P 超清画面，给算法足够的像素来区分黑白线条
-    width: { ideal: 1920, min: 1280 },
-    height: { ideal: 1080, min: 720 },
-    // 尝试强行唤醒手机底层的“连续自动对焦”（FocusMode API）
-    advanced: [{ focusMode: "continuous" }]
-  };
-
+  // 第一个参数老老实实只传 1 个键（满足组件的死规定）
   scanner.start(
-    cameraConstraints, 
+    { facingMode: 'environment' }, 
     config,
     text => {
       document.getElementById('barcode').value = text;
       setTimeout(() => stopScanner(), 200); 
     },
     errorMessage => {
-      // 保持留空，避免控制台报错影响性能
+      // 保持留空
     }
   ).catch(e => {
     scanner = null;
