@@ -125,31 +125,42 @@ function startScanner() {
   document.getElementById('reader').innerHTML = '';
   
   const formatsToSupport = [
-    Html5QrcodeSupportedFormats.CODE_128, 
+    Html5QrcodeSupportedFormats.EAN_13,    
+    Html5QrcodeSupportedFormats.EAN_8,     
+    Html5QrcodeSupportedFormats.CODE_128,  
+    Html5QrcodeSupportedFormats.CODE_39,
+    Html5QrcodeSupportedFormats.UPC_A
   ];
 
   scanner = new Html5Qrcode('reader', { formatsToSupport: formatsToSupport });
   document.getElementById('reader').classList.remove('hidden');
   
-  // 【关键修改：全屏扫码模式】
   const config = {
-    fps: 20, 
-    // 把 qrbox 这行直接删掉！
-    // 这样不仅去掉了限制框，算法还会扫描整个屏幕，无论条码在左上角还是右下角都能瞬间扫出
+    fps: 15, // 保持 15 帧即可，帧率太高手机 CPU 会发烫卡顿
     experimentalFeatures: {
-      useBarCodeDetectorIfSupported: true
+      useBarCodeDetectorIfSupported: true // 优先调用安卓系统的硬件级扫码
     }
   };
 
+  // 【核心修改：暴力拉升画质与对焦】
+  const cameraConstraints = {
+    facingMode: 'environment',
+    // 强制要求手机提供 1080P 超清画面，给算法足够的像素来区分黑白线条
+    width: { ideal: 1920, min: 1280 },
+    height: { ideal: 1080, min: 720 },
+    // 尝试强行唤醒手机底层的“连续自动对焦”（FocusMode API）
+    advanced: [{ focusMode: "continuous" }]
+  };
+
   scanner.start(
-    { facingMode: 'environment' }, 
+    cameraConstraints, 
     config,
     text => {
       document.getElementById('barcode').value = text;
       setTimeout(() => stopScanner(), 200); 
     },
     errorMessage => {
-      // 保持留空
+      // 保持留空，避免控制台报错影响性能
     }
   ).catch(e => {
     scanner = null;
