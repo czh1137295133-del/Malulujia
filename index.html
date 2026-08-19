@@ -116,55 +116,47 @@ if(type==='out'&&qty(b)<q-1e-9)return alert(`库存不足，当前 ${qty(b)} ${p
 let {error}=await sb.rpc('record_stock_move',{p_barcode:b,p_move_type:type,p_qty:q});if(error)return alert(error.message);
 document.getElementById('barcode').value='';document.getElementById('scanInfo').textContent=`已完成：${type==='in'?'入库':'出库'} ${q}${p.unit} ${p.name}`;await loadAll()}
 
-function startScanner(){
-  if(typeof Html5Qrcode==='undefined') return alert('扫码组件还在加载，请稍等1秒再点。');
+function startScanner() {
+  if(typeof Html5Qrcode === 'undefined') return alert('扫码组件还在加载，请稍等1秒再点。');
+  // 如果当前已经有正在运行的扫码器，直接返回，防止重复点击开启多个
   if(scanner) return;
   
   scanner = new Html5Qrcode('reader');
   document.getElementById('reader').classList.remove('hidden');
   
-  // 针对普通商品条形码的优化配置
   const config = {
-    fps: 15, // 适当提高帧率，加快捕捉
-    qrbox: { width: 300, height: 120 }, // 把框改宽变扁，完美匹配条形码形状
-    aspectRatio: 1.0 // 保持画面比例，防止镜头画面被拉伸导致条码变形
-  };
-
-  // 请求更高的摄像头分辨率来识别密集的线条
-  const cameraConfig = { 
-    facingMode: 'environment',
-    // 强制请求较高分辨率（大部分现代手机支持）
-    video: { width: { min: 1280 } } 
+    fps: 15, 
+    qrbox: { width: 300, height: 120 }, // 扁平宽框，适合条形码
+    aspectRatio: 1.0 
   };
 
   scanner.start(
-    cameraConfig,
+    { facingMode: 'environment', video: { width: { min: 1280 } } },
     config,
     text => {
       // 成功扫出时的处理
       document.getElementById('barcode').value = text;
-      stopScanner();
+      // 调用新版的安全关闭函数
+      stopScanner(); 
     },
     errorMessage => {
-      // 扫码过程中的识别失败（通常是没对准），这里必须留空，否则控制台会疯狂报错
+      // 扫描过程中的未对准报错，必须留空
     }
   ).catch(e => {
     scanner = null;
-    alert('摄像头启动失败或不支持高分辨率：' + e);
+    alert('摄像头启动失败：' + e);
   });
 }
 // 注意函数前面加了 async
 async function stopScanner() {
   if (scanner) {
     try {
-      // 加上 await，耐心等待手机硬件把摄像头真正关闭
+      // 核心修复点：等待摄像头关闭
       await scanner.stop(); 
-      // 确认关闭后再清空界面
       scanner.clear();      
     } catch (e) {
-      console.warn("停止摄像头时忽略错误:", e);
+      console.warn("停止时发生意外，已忽略:", e);
     }
-    // 最后再把变量置空
     scanner = null; 
   }
   document.getElementById('reader').classList.add('hidden');
