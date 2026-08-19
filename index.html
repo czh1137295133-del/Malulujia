@@ -124,12 +124,10 @@ function startScanner() {
 
   document.getElementById('reader').innerHTML = '';
   
-  // 1. 初始化时，指定只支持常见的一维条码格式，减少不必要的算法比对
-  // Html5QrcodeSupportedFormats 需要 Html5Qrcode 库支持，如果不报错会自动加速
   const formatsToSupport = [
-    Html5QrcodeSupportedFormats.EAN_13,    // 中国绝大多数标准商品条码
-    Html5QrcodeSupportedFormats.EAN_8,     // 较小的包装条码
-    Html5QrcodeSupportedFormats.CODE_128,  // 物流、快递、自编条码
+    Html5QrcodeSupportedFormats.EAN_13,    
+    Html5QrcodeSupportedFormats.EAN_8,     
+    Html5QrcodeSupportedFormats.CODE_128,  
     Html5QrcodeSupportedFormats.CODE_39,
     Html5QrcodeSupportedFormats.UPC_A
   ];
@@ -137,11 +135,11 @@ function startScanner() {
   scanner = new Html5Qrcode('reader', { formatsToSupport: formatsToSupport });
   document.getElementById('reader').classList.remove('hidden');
   
-  // 2. 扫码运行配置
+  // 【关键修改：全屏扫码模式】
   const config = {
-    fps: 20, // 提高帧率到 20fps，增加每秒识别抓拍的次数
-    qrbox: { width: 300, height: 120 }, // 保持条形码扁平框
-    // 启用浏览器原生 BarcodeDetector（极速硬件加速，安卓 Chrome/Edge 体验提升明显）
+    fps: 20, 
+    // 把 qrbox 这行直接删掉！
+    // 这样不仅去掉了限制框，算法还会扫描整个屏幕，无论条码在左上角还是右下角都能瞬间扫出
     experimentalFeatures: {
       useBarCodeDetectorIfSupported: true
     }
@@ -155,7 +153,7 @@ function startScanner() {
       setTimeout(() => stopScanner(), 200); 
     },
     errorMessage => {
-      // 未识别帧保持留空
+      // 保持留空
     }
   ).catch(e => {
     scanner = null;
