@@ -116,7 +116,43 @@ if(type==='out'&&qty(b)<q-1e-9)return alert(`库存不足，当前 ${qty(b)} ${p
 let {error}=await sb.rpc('record_stock_move',{p_barcode:b,p_move_type:type,p_qty:q});if(error)return alert(error.message);
 document.getElementById('barcode').value='';document.getElementById('scanInfo').textContent=`已完成：${type==='in'?'入库':'出库'} ${q}${p.unit} ${p.name}`;await loadAll()}
 
-function startScanner(){if(typeof Html5Qrcode==='undefined')return alert('扫码组件还在加载，请稍等1秒再点。');if(scanner)return;scanner=new Html5Qrcode('reader');document.getElementById('reader').classList.remove('hidden');scanner.start({facingMode:'environment'},{fps:10,qrbox:{width:250,height:160}},text=>{document.getElementById('barcode').value=text;stopScanner()},()=>{}).catch(e=>{scanner=null;alert('摄像头无法启动：'+e)})}
+function startScanner(){
+  if(typeof Html5Qrcode==='undefined') return alert('扫码组件还在加载，请稍等1秒再点。');
+  if(scanner) return;
+  
+  scanner = new Html5Qrcode('reader');
+  document.getElementById('reader').classList.remove('hidden');
+  
+  // 针对普通商品条形码的优化配置
+  const config = {
+    fps: 15, // 适当提高帧率，加快捕捉
+    qrbox: { width: 300, height: 120 }, // 把框改宽变扁，完美匹配条形码形状
+    aspectRatio: 1.0 // 保持画面比例，防止镜头画面被拉伸导致条码变形
+  };
+
+  // 请求更高的摄像头分辨率来识别密集的线条
+  const cameraConfig = { 
+    facingMode: 'environment',
+    // 强制请求较高分辨率（大部分现代手机支持）
+    video: { width: { min: 1280 } } 
+  };
+
+  scanner.start(
+    cameraConfig,
+    config,
+    text => {
+      // 成功扫出时的处理
+      document.getElementById('barcode').value = text;
+      stopScanner();
+    },
+    errorMessage => {
+      // 扫码过程中的识别失败（通常是没对准），这里必须留空，否则控制台会疯狂报错
+    }
+  ).catch(e => {
+    scanner = null;
+    alert('摄像头启动失败或不支持高分辨率：' + e);
+  });
+}
 function stopScanner(){if(scanner){scanner.stop().catch(()=>{});scanner.clear().catch(()=>{});scanner=null}document.getElementById('reader').classList.add('hidden')}
 function subscribeRealtime(){sb.channel('stock-live').on('postgres_changes',{event:'*',schema:'public',table:'products'},()=>loadAll()).on('postgres_changes',{event:'*',schema:'public',table:'stock_flows'},()=>loadAll()).subscribe()}
 function exportCSV(){let csv='\ufeff时间,操作,商品,条码,数量,单位\n'+flows.map(f=>[new Date(f.created_at).toLocaleString(),f.move_type==='in'?'入库':'出库',f.product_name,f.barcode,f.qty,f.unit].map(x=>`"${String(x).replace(/"/g,'""')}"`).join(',')).join('\n');let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='云库存流水.csv';a.click()}
