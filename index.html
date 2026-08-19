@@ -137,10 +137,7 @@ async function switchCamera() {
 }
 
 function startScanner() {
-  if (typeof Html5Qrcode === 'undefined') {
-    return alert('扫码组件还在加载，请稍等。');
-  }
-
+  if (typeof Html5Qrcode === 'undefined') return alert('扫码组件还在加载，请稍等。');
   if (scanner || isStopping) return;
 
   const reader = document.getElementById('reader');
@@ -155,37 +152,35 @@ function startScanner() {
     Html5QrcodeSupportedFormats.UPC_A
   ];
 
-  scanner = new Html5Qrcode('reader', {
-    formatsToSupport: formatsToSupport
-  });
+  scanner = new Html5Qrcode('reader', { formatsToSupport });
 
   const config = {
-    fps: 15,
-    qrbox: { width: 280, height: 160 },
-    aspectRatio: 1.777,
+    fps: 20,
+    qrbox: { width: 320, height: 180 },
+    aspectRatio: 16 / 9,
+    disableFlip: true,
+    experimentalFeatures: { useBarCodeDetectorIfSupported: true },
     videoConstraints: {
-      facingMode: { exact: currentCameraMode },
-      width: { ideal: 1920 },
-      height: { ideal: 1080 }
+      facingMode: { exact: 'environment' },
+      width: { ideal: 1920, min: 1280 },
+      height: { ideal: 1080, min: 720 }
     }
   };
 
   scanner.start(
-    { facingMode: { exact: currentCameraMode } },
+    { facingMode: { exact: 'environment' } },
     config,
-    function(decodedText) {
-      document.getElementById('barcode').value = decodedText;
-      document.getElementById('scanInfo').textContent = '扫描成功：' + decodedText;
-      setTimeout(() => stopScanner(), 300);
+    text => {
+      document.getElementById('barcode').value = text;
+      document.getElementById('scanInfo').textContent = '扫描成功：' + text;
+      setTimeout(() => stopScanner(), 200);
     },
-    function(errorMessage) {
-      // 扫描失败时不提示，避免手机上不断弹消息
-    }
-  ).catch(function(error) {
-    console.error('后置摄像头启动失败:', error);
+    () => {}
+  ).catch(e => {
     scanner = null;
     reader.classList.add('hidden');
-    alert('后置摄像头启动失败。\n\n请检查：\n1. 是否允许浏览器使用摄像头\n2. 是否使用 HTTPS 打开网页\n3. 是否有其他 App 正在占用摄像头');
+    console.error(e);
+    alert('后置摄像头启动失败，请确认浏览器已允许摄像头权限。');
   });
 }
 
