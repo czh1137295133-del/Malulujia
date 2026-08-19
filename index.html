@@ -15,7 +15,7 @@ main{max-width:760px;margin:auto;padding:12px 12px 40px}.cards{display:grid;grid
 .panel{padding:14px;margin-bottom:10px}.hidden{display:none!important}
 input,select{width:100%;font-size:16px;padding:11px;border:1px solid #d1d5db;border-radius:10px;margin:4px 0 9px;background:#fff}button{border:0;border-radius:10px;padding:11px 13px;font-weight:700;font-size:14px}.primary{background:#111827;color:#fff}.green{background:#dcfce7;color:#166534}.red{background:#fee2e2;color:#991b1b}.gray{background:#e5e7eb}.orange{background:#ffedd5;color:#9a3412}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}.item{display:flex;justify-content:space-between;gap:10px;padding:12px 0;border-bottom:1px solid #eee}.item:last-child{border-bottom:0}.muted{font-size:12px;color:#6b7280}.badge{font-size:11px;padding:4px 7px;border-radius:99px;background:#dcfce7;color:#166534}.low{background:#fee2e2;color:#991b1b}.notice{background:#eff6ff;color:#1d4ed8;border-radius:10px;padding:10px;font-size:13px;margin-bottom:10px}.danger{color:#b91c1c}
-#reader{width:100%;min-height:180px;background:#111827;border-radius:12px;overflow:hidden;margin:8px 0}#reader video{width:100%!important}
+#reader{width:100%;min-height:180px;background:#111827;border-radius:12px;overflow:hidden;margin:8px 0}#reader video{width:100%!important;height:auto!important;object-fit:cover!important}
 .login{max-width:420px;margin:12vh auto;padding:16px}.login h2{margin-top:0}.status{font-size:12px;margin:7px 0}.ok{color:#15803d}.err{color:#b91c1c}
 table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:7px;border-bottom:1px solid #eee;text-align:left}
 </style>
@@ -55,6 +55,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:7px;borde
 <section id="scan" class="panel hidden">
 <div class="notice">手机打开本网页后，点“开始扫码”。第一次使用需要允许摄像头权限。若扫码失败，也可以直接输入条码。</div>
 <div class="row"><button class="primary" onclick="startScanner()">📷开始扫码</button><button class="gray" onclick="stopScanner()">停止</button></div>
+  <div class="row"><button class="gray" onclick="switchCamera()">🔄切换摄像头</button></div>
 <div id="reader" class="hidden"></div>
 <label>条码</label><input id="barcode" placeholder="扫描或输入条码">
 <div id="scanInfo" class="muted"></div>
@@ -118,50 +119,73 @@ document.getElementById('barcode').value='';document.getElementById('scanInfo').
 
 let isStopping = false;
 
-function startScanner() {
-  if (typeof Html5Qrcode === 'undefined') return alert('扫码组件还在加载，请稍等。');
-  if (scanner || isStopping) return; 
+let currentCameraMode = 'environment';
 
-  document.getElementById('reader').innerHTML = '';
-  
+async function switchCamera() {
+  if (isStopping) return;
+  if (!scanner) {
+    currentCameraMode = currentCameraMode === 'environment' ? 'user' : 'environment';
+    return startScanner();
+  }
+  try {
+    await stopScanner();
+    currentCameraMode = currentCameraMode === 'environment' ? 'user' : 'environment';
+    startScanner();
+  } catch (e) {
+    console.error('切换摄像头失败:', e);
+  }
+}
+
+function startScanner() {
+  if (typeof Html5Qrcode === 'undefined') {
+    return alert('扫码组件还在加载，请稍等。');
+  }
+
+  if (scanner || isStopping) return;
+
+  const reader = document.getElementById('reader');
+  reader.innerHTML = '';
+  reader.classList.remove('hidden');
+
   const formatsToSupport = [
-    Html5QrcodeSupportedFormats.EAN_13,    
-    Html5QrcodeSupportedFormats.EAN_8,     
-    Html5QrcodeSupportedFormats.CODE_128,  
+    Html5QrcodeSupportedFormats.CODE_128,
+    Html5QrcodeSupportedFormats.EAN_13,
+    Html5QrcodeSupportedFormats.EAN_8,
     Html5QrcodeSupportedFormats.CODE_39,
     Html5QrcodeSupportedFormats.UPC_A
   ];
 
-  scanner = new Html5Qrcode('reader', { formatsToSupport: formatsToSupport });
-  document.getElementById('reader').classList.remove('hidden');
-  
+  scanner = new Html5Qrcode('reader', {
+    formatsToSupport: formatsToSupport
+  });
+
   const config = {
     fps: 15,
-    experimentalFeatures: {
-      useBarCodeDetectorIfSupported: true
-    },
+    qrbox: { width: 280, height: 160 },
+    aspectRatio: 1.777,
     videoConstraints: {
-      // 【核心修复】：在这里再次强制要求使用后置摄像头
-      facingMode: 'environment', 
-      width: { ideal: 1920, min: 1280 },
-      height: { ideal: 1080, min: 720 },
-      advanced: [{ focusMode: "continuous" }]
+      facingMode: { exact: currentCameraMode },
+      width: { ideal: 1920 },
+      height: { ideal: 1080 }
     }
   };
 
   scanner.start(
-    { facingMode: 'environment' }, // 这里保留以应付组件的参数检查
+    { facingMode: { exact: currentCameraMode } },
     config,
-    text => {
-      document.getElementById('barcode').value = text;
-      setTimeout(() => stopScanner(), 200); 
+    function(decodedText) {
+      document.getElementById('barcode').value = decodedText;
+      document.getElementById('scanInfo').textContent = '扫描成功：' + decodedText;
+      setTimeout(() => stopScanner(), 300);
     },
-    errorMessage => {
-      // 保持留空
+    function(errorMessage) {
+      // 扫描失败时不提示，避免手机上不断弹消息
     }
-  ).catch(e => {
+  ).catch(function(error) {
+    console.error('后置摄像头启动失败:', error);
     scanner = null;
-    alert('摄像头启动失败：' + e);
+    reader.classList.add('hidden');
+    alert('后置摄像头启动失败。\n\n请检查：\n1. 是否允许浏览器使用摄像头\n2. 是否使用 HTTPS 打开网页\n3. 是否有其他 App 正在占用摄像头');
   });
 }
 
